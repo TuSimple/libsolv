@@ -234,6 +234,8 @@ struct s_Pool {
 #define REL_WITHOUT	28
 #define REL_UNLESS	29	/* AND_NOT */
 #define REL_CONDA	30
+#define REL_FEATURE	31
+#define REL_EXACT	32	/* exact equal, not more, not less */
 
 #if !defined(__GNUC__) && !defined(__attribute__)
 # define __attribute__(x)

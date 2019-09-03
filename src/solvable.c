@@ -28,9 +28,11 @@
 const char *
 pool_solvable2str(Pool *pool, Solvable *s)
 {
-  const char *n, *e, *a;
-  int nl, el, al;
+  const char *n, *e, *a, *feature;
+  int nl, el, al, fl, pos;
   char *p;
+  Id pid, *pidp;
+  Reldep *rd;
   n = pool_id2str(pool, s->name);
   e = s->evr ? pool_id2str(pool, s->evr) : "";
   /* XXX: may want to skip the epoch here */
@@ -38,6 +40,23 @@ pool_solvable2str(Pool *pool, Solvable *s)
   nl = strlen(n);
   el = strlen(e);
   al = strlen(a);
+  /*
+    calculate space for all features
+   */
+  fl = 0;
+  pidp = s->repo->idarraydata + s->provides;
+  while ((pid = *pidp++) != 0)
+  {
+    if (ISRELDEP(pid))
+    {
+      rd = GETRELDEP(pool, pid);
+      if (rd->flags == REL_FEATURE)
+      {
+        feature = pool_id2str(pool, rd->evr);
+        fl += strlen(feature) + 1; /* 1 more for '+' */
+      }
+    }
+  }
   if (pool->havedistepoch)
     {
       /* strip the distepoch from the evr */
@@ -45,19 +64,40 @@ pool_solvable2str(Pool *pool, Solvable *s)
       if (de && (de = strchr(de, ':')) != 0)
 	el = de - e;
     }
-  p = pool_alloctmpspace(pool, nl + el + al + 3);
+  p = pool_alloctmpspace(pool, nl + el + al + fl + 3);
   strcpy(p, n);
   if (el)
     {
-      p[nl++] = '-';
+      p[nl++] = '@';
       strncpy(p + nl, e, el);
       p[nl + el] = 0;
     }
   if (al)
     {
-      p[nl + el] = pool->disttype == DISTTYPE_HAIKU ? '-' : '.';
+      p[nl + (el++)] = pool->disttype == DISTTYPE_HAIKU ? '-' : '.';
       strcpy(p + nl + el + 1, a);
     }
+  /* get feature in str */
+  if (fl)
+  {
+    pidp = s->repo->idarraydata + s->provides;
+    pos = nl + el + al;
+    while ((pid = *pidp++) != 0)
+    {
+      if (ISRELDEP(pid))
+      {
+        rd = GETRELDEP(pool, pid);
+        if (rd->flags == REL_FEATURE)
+        {
+          feature = pool_id2str(pool, rd->evr);
+          p[pos] = '+';
+          strcpy(p+pos+1, feature);
+          pos += strlen(feature) + 1;
+        }
+      }
+    }
+    p[pos] = 0;
+  }
   if (pool->disttype == DISTTYPE_CONDA && solvable_lookup_type(s, SOLVABLE_BUILDFLAVOR))
     {
       Queue flavorq;
@@ -482,6 +522,8 @@ solvable_identical(Solvable *s1, Solvable *s2)
     return 0;
   if (s1->evr != s2->evr)
     return 0;
+  if (s1->has_feature != s2->has_feature)
+    return 0;
 
   /* check vendor, map missing vendor to empty string */
   if ((s1->vendor ? s1->vendor : 1) != (s2->vendor ? s2->vendor : 1))
@@ -603,6 +645,18 @@ solvable_add_idarray(Solvable *s, Id keyname, Id id)
 void
 solvable_add_deparray(Solvable *s, Id keyname, Id dep, Id marker)
 {
+  /*
+    minor hack here to mark this solvable is a feature version,
+    so we can used this info when sorting packages
+   */
+  if (keyname == SOLVABLE_PROVIDES && ISRELDEP(dep)) {
+    Reldep *rd = GETRELDEP(s->repo->pool, dep);
+    if (rd->flags == REL_FEATURE)
+      /*
+        s->has_feature is 0 when created (memset to 0)
+       */
+      s->has_feature = 1;
+  }
   repo_add_deparray(s->repo, s - s->repo->pool->solvables, keyname, dep, marker);
 }
 

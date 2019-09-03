@@ -72,7 +72,7 @@ prune_to_best_version_sortcmp(const void *ap, const void *bp, void *dp)
 	    return -1;
 	}
       else if (sb->repo == pool->installed)
-	return 1;	
+	return 1;
     }
   /* sort by repository sub-prio (installed repo handled above) */
   r = (sb->repo ? sb->repo->subpriority : 0) - (sa->repo ? sa->repo->subpriority : 0);
@@ -879,7 +879,7 @@ prune_to_best_version(Pool *pool, Queue *plist)
       s = pool->solvables + plist->elements[i];
 
       POOL_DEBUG(SOLV_DEBUG_POLICY, "- %s [%d]%s\n",
-		 pool_solvable2str(pool, s), plist->elements[i], 
+		 pool_solvable2str(pool, s), plist->elements[i],
 		 (pool->installed && s->repo == pool->installed) ? "I" : "");
 
       if (!best)		/* if no best yet, the current is best */
@@ -895,7 +895,18 @@ prune_to_best_version(Pool *pool, Queue *plist)
           best = s;		/* take current as new best */
           continue;
         }
-      r = best->evr != s->evr ? pool_evrcmp(pool, best->evr, s->evr, EVRCMP_COMPARE) : 0;
+      /*
+        feature version should always come after normal version
+       */
+      if (best->has_feature != s->has_feature) {
+        /*
+          r = -1, s has no feature, should be the new best
+          r = 1, best is still better
+         */
+        r = s->has_feature - best->has_feature;
+      } else {
+        r = best->evr != s->evr ? pool_evrcmp(pool, best->evr, s->evr, EVRCMP_COMPARE) : 0;
+      }
 #ifdef ENABLE_LINKED_PKGS
       if (r == 0 && has_package_link(pool, s))
         r = pool_link_evrcmp(pool, best, s);

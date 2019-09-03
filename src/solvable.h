@@ -45,6 +45,7 @@ typedef struct s_Solvable {
   Offset supplements;
   Offset enhances;
 
+  int has_feature;
 } Solvable;
 
 /* lookup functions */

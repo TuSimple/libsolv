@@ -351,7 +351,7 @@ pool_shrink_whatprovides(Pool *pool)
       if (last)
 	{
 	  lp = last;
-	  while (*dp)	
+	  while (*dp)
 	    if (*dp++ != *lp++)
 	      {
 		last = 0;
@@ -1313,6 +1313,109 @@ pool_addrelproviders(Pool *pool, Id d)
           wp = pool_addrelproviders_conda(pool, name, evr, &plist);
 	  break;
 #endif
+#ifdef ENABLE_TSPKG
+	case REL_FEATURE:
+	  /*
+	    tspkg feature: version+feature
+	    name field is the version requirement,
+	    evr field is the feature
+	   */
+	  wp = pool_whatprovides(pool, name);
+	  pp = pool->whatprovidesdata + wp;
+	  while ((p = *pp++) != 0)
+	  {
+	    Solvable *s = pool->solvables + p;
+	    /*
+	      check if s provides the feature
+	     */
+	    if (!s->provides)
+	      continue;
+	    pidp = s->repo->idarraydata + s->provides;
+
+	    while ((pid = *pidp++) != 0)
+	    {
+		if (ISRELDEP(pid))
+		{
+		  Reldep *rd = GETRELDEP(pool, pid);
+		  /* only allow feature as the outermost rel */
+		  if (rd->flags == REL_FEATURE && rd->evr == evr)
+		      queue_push(&plist, p);
+		}
+	    }
+	  }
+	  wp = 0;
+	  break;
+	case REL_EXACT:
+	  /*
+	    EQ exactly as dep specified, not more features, not less
+	    The original REL_EQ does not give true eq results when features come into play
+	    with REL_EXACT we ask that features must also equal (same features)
+	   */
+
+	  /*
+	    wp is the offset to an array of solvables (id) which all satisfy the required version and features.
+	    but they may have more features than required, so a filter is needed.
+	  */
+	  wp = pool_whatprovides(pool, name);
+	  pp = pool->whatprovidesdata + wp;
+	  while ((p = *pp++) != 0)
+	  {
+	    Solvable *s = pool->solvables + p;
+	    Reldep *rd;
+	    int eq = 1;
+
+	    /*
+	      loop through all things that s provides, only focus on features though
+	     */
+	    pidp = s->repo->idarraydata + s->provides;
+	    /* check if s has more features than required */
+	    while ((pid = *pidp++) != 0)
+	    {
+	      if (ISRELDEP(pid))
+	      {
+		rd = GETRELDEP(pool, pid);
+		if (rd->flags == REL_FEATURE)
+		{
+		  Id feature = rd->evr; /* feature is stored in evr in provides data */
+		  /*
+		    now check if the feature is in dep,
+		    we loop through all feature req of the dependency requirement to
+		    search for a matching one, if there isn't such feature, then equality
+		    does not hold.
+		    (this should not be a performance issue as the number of features normally is not very large (1 or 2 actually))
+		  */
+		  Id dep = name;
+		  Reldep *found_rd = 0, *dep_rd;
+		  while (ISRELDEP(dep))
+		  {
+		    dep_rd = GETRELDEP(pool, dep);
+		    /* no more feature deps (as feature deps are at outermost layers) */
+		    if (dep_rd->flags != REL_FEATURE)
+		      break;
+		    if (dep_rd->evr == feature)
+		    {
+		      found_rd = dep_rd;
+		      break;
+		    }
+		    dep = dep_rd->name;
+		  }
+		  /* s has one feature that is not asked for */
+		  if (!found_rd)
+		  {
+		    eq = 0;
+		    break;
+		  }
+		}
+	      }
+	    }
+	    if (eq)
+	    {
+	      queue_push(&plist, p);
+	    }
+	  }
+	  wp = 0;
+	  break;
+#endif
 	default:
 	  break;
 	}
@@ -1958,7 +2061,7 @@ pool_set_whatprovides(Pool *pool, Id id, Id providers)
   for (rd = pool->rels + d; d < nrels; d++, rd++)
     {
       if (rd->name == id || rd->evr == id ||
-	  (m.size && ISRELDEP(rd->name) && MAPTST(&m, GETRELID(rd->name))) || 
+	  (m.size && ISRELDEP(rd->name) && MAPTST(&m, GETRELID(rd->name))) ||
 	  (m.size && ISRELDEP(rd->evr)  && MAPTST(&m, GETRELID(rd->evr))))
 	{
 	  pool->whatprovides_rel[d] = 0;	/* clear cache */

@@ -220,8 +220,12 @@ pool_id2rel(const Pool *pool, Id id)
       return pool->disttype == DISTTYPE_RPM ? " else " : " ELSE ";
     case REL_CONDA:
       return " ";
+    case REL_FEATURE:
+      return "+";
     case REL_ERROR:
       return " ERROR ";
+    case REL_EXACT:
+      return "";
     default:
       break;
     }
